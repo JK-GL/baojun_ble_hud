@@ -3,7 +3,8 @@ name: Build BaojunBLEHUD Self Contained
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   build:
@@ -17,7 +18,6 @@ jobs:
           set -eu
           rm -rf baojun_ble_hud
           mkdir -p baojun_ble_hud
-
           cat > baojun_ble_hud/Makefile <<'EOF'
 ARCHS = arm64
 TARGET = iphone:clang:latest:15.0
@@ -32,11 +32,9 @@ BaojunBLEHUD_FRAMEWORKS = UIKit CoreBluetooth Foundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 EOF
-
           cat > baojun_ble_hud/GNUmakefile <<'EOF'
 include Makefile
 EOF
-
           cat > baojun_ble_hud/BaojunBLEHUD.plist <<'EOF'
 Filter = {
     Bundles = (
@@ -44,269 +42,130 @@ Filter = {
     );
 };
 EOF
-
           cat > baojun_ble_hud/control <<'EOF'
 Package: com.baomj.blehud
 Name: BaojunBLEHUD
 Version: 0.1.0
 Architecture: iphoneos-arm64
-Description: 宝骏云海 BLE 蓝牙车辆状态悬浮窗
+Description: Baojun Yunhai BLE car status HUD
 Maintainer: baomj
 Author: baomj
 Section: Tweaks
 Depends: firmware (>= 15.0)
 EOF
-
           cat > baojun_ble_hud/Tweak.xm <<'XEOF'
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <CoreBluetooth/CoreBluetooth.h>
 #import <objc/runtime.h>
 
-// ============================================================
-// MARK: - 工具函数
-// ============================================================
-
-static BOOL BJIsBaojunProcess(void) {
-    NSString *bundleId = [NSBundle mainBundle].bundleIdentifier ?: @"";
-    return [bundleId isEqualToString:@"com.sgmw.baojunplus"];
+static BOOL BJIsTarget(void) {
+    NSString *bid = [NSBundle mainBundle].bundleIdentifier ?: @"";
+    return [bid isEqualToString:@"com.sgmw.baojunplus"];
 }
 
-static NSString *BJHexData(NSData *data, NSUInteger maxLen) {
-    if (!data) return @"";
-    NSUInteger len = MIN(data.length, maxLen);
-    const unsigned char *buf = data.bytes;
-    NSMutableString *hex = [NSMutableString stringWithCapacity:len * 2];
-    for (NSUInteger i = 0; i < len; i++) [hex appendFormat:@"%02x", buf[i]];
-    return hex;
+static NSString *BJHex(NSData *d, int mx) {
+    if (!d) return @"";
+    int len = (int)MIN(d.length, mx);
+    const unsigned char *b = d.bytes;
+    NSMutableString *s = [NSMutableString stringWithCapacity:len*2];
+    for (int i=0; i<len; i++) [s appendFormat:@"%02x",b[i]];
+    return s;
 }
 
-// ============================================================
-// MARK: - HUD 悬浮窗
-// ============================================================
-
-static UILabel *gHUDLabel = nil;
-static UIView *gHUDView = nil;
+static UIView *gHUD = nil;
+static UILabel *gLabel = nil;
 
 static void BJShowHUD(void) {
-    if (gHUDView) return;
-
+    if (gHUD) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         CGFloat sw = [UIScreen mainScreen].bounds.size.width;
-
-        gHUDView = [[UIView alloc] initWithFrame:CGRectMake(sw - 175, 80, 165, 100)];
-        gHUDView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.82];
-        gHUDView.layer.cornerRadius = 12;
-        gHUDView.layer.borderWidth = 0.5;
-        gHUDView.layer.borderColor = [[UIColor colorWithRed:0.2 green:0.8 blue:0.4 alpha:0.7] CGColor];
-        gHUDView.tag = 9999;
-
-        gHUDLabel = [[UILabel alloc] initWithFrame:CGRectMake(8, 6, 149, 88)];
-        gHUDLabel.textColor = [UIColor whiteColor];
-        gHUDLabel.font = [UIFont systemFontOfSize:10];
-        gHUDLabel.numberOfLines = 0;
-        gHUDLabel.text = @"🚗 宝骏云海\n加载中...";
-        [gHUDView addSubview:gHUDLabel];
-
-        // 加载到 keyWindow
-        UIWindow *keyWindow = nil;
-        for (UIWindow *w in [UIApplication sharedApplication].windows) {
-            if (w.isKeyWindow) { keyWindow = w; break; }
+        gHUD = [[UIView alloc] initWithFrame:CGRectMake(sw-175, 80, 165, 110)];
+        gHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.85];
+        gHUD.layer.cornerRadius = 12;
+        gHUD.layer.borderWidth = 0.5;
+        gHUD.layer.borderColor = [[UIColor colorWithRed:0.2 green:0.8 blue:0.4 alpha:0.8] CGColor];
+        gLabel = [[UILabel alloc] initWithFrame:CGRectMake(8, 6, 149, 98)];
+        gLabel.textColor = [UIColor whiteColor];
+        gLabel.font = [UIFont systemFontOfSize:10];
+        gLabel.numberOfLines = 0;
+        gLabel.text = @"Loading...";
+        [gHUD addSubview:gLabel];
+        UIWindow *w = nil;
+        for (UIWindow *win in [UIApplication sharedApplication].windows) {
+            if (win.isKeyWindow) { w = win; break; }
         }
-        if (!keyWindow && [UIApplication sharedApplication].windows.count > 0) {
-            keyWindow = [UIApplication sharedApplication].windows.firstObject;
-        }
-        if (keyWindow) {
-            [keyWindow addSubview:gHUDView];
-        }
-
-        // 可拖拽
-        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
-            initWithTarget:[NSClassFromString(@"BJPanHandler") shared] action:@selector(handlePan:)];
-        [gHUDView addGestureRecognizer:pan];
-
-        NSLog(@"[BJBLE] ✅ HUD 显示成功! window=%@", keyWindow);
+        if (!w) w = [UIApplication sharedApplication].windows.firstObject;
+        if (w) [w addSubview:gHUD];
+        NSLog(@"[BJBLE] HUD shown window=%@", w);
     });
 }
 
-static void BJUpdateHUD(NSString *text) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        gHUDLabel.text = text;
-        if (!gHUDView) BJShowHUD();
-    });
-}
-
-// 拖拽处理
-@interface BJPanHandler : NSObject
-+ (instancetype)shared;
-- (void)handlePan:(UIPanGestureRecognizer *)gesture;
-@end
-
-@implementation BJPanHandler
-+ (instancetype)shared {
-    static BJPanHandler *h; static dispatch_once_t t;
-    dispatch_once(&t, ^{ h = [BJPanHandler new]; }); return h;
-}
-- (void)handlePan:(UIPanGestureRecognizer *)g {
-    CGPoint loc = [g locationInView:g.view.superview];
-    if (g.state == UIGestureRecognizerStateChanged) {
-        CGFloat w = g.view.bounds.size.width;
-        CGFloat h = g.view.bounds.size.height;
-        CGFloat sx = [UIScreen mainScreen].bounds.size.width;
-        CGFloat sy = [UIScreen mainScreen].bounds.size.height;
-        CGFloat nx = MAX(0, MIN(loc.x - w/2, sx - w));
-        CGFloat ny = MAX(40, MIN(loc.y - 10, sy - h - 40));
-        g.view.center = CGPointMake(nx + w/2, ny + 10);
-    }
-}
-@end
-
-// ============================================================
-// MARK: - 车辆状态解析 (从 UserDefaults 缓存读取)
-// ============================================================
-
-static NSString *BJReadCarStatus(void) {
-    NSDictionary *dict = [[NSUserDefaults standardUserDefaults] dictionaryRepresentation];
-    NSString *vin = @"LK6ADAH92RB765125";
-
-    // 搜索包含 car_status 或 vin 的 key
-    for (NSString *key in dict) {
-        id val = dict[key];
-        if (![key containsString:@"car"] && ![key containsString:@"vehicle"] && ![key containsString:@"status"]) continue;
-
-        NSDictionary *statusDict = nil;
-        if ([val isKindOfClass:[NSDictionary class]]) {
-            statusDict = val;
-        } else if ([val isKindOfClass:[NSString class]] && [(NSString *)val length] > 10) {
-            NSData *jsonData = [(NSString *)val dataUsingEncoding:NSUTF8StringEncoding];
-            if (jsonData) {
-                NSError *err;
-                id parsed = [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:&err];
-                if ([parsed isKindOfClass:[NSDictionary class]]) statusDict = parsed;
-            }
+static NSString *BJReadStatus(void) {
+    NSDictionary *d = [[NSUserDefaults standardUserDefaults] dictionaryRepresentation];
+    for (NSString *k in d) {
+        id v = d[k];
+        NSDictionary *sd = nil;
+        if ([v isKindOfClass:[NSDictionary class]]) sd = v;
+        else if ([v isKindOfClass:[NSString class]] && [(NSString *)v length] > 20) {
+            NSData *jd = [(NSString *)v dataUsingEncoding:NSUTF8StringEncoding];
+            if (jd) { id p = [NSJSONSerialization JSONObjectWithData:jd options:0 error:nil]; if ([p isKindOfClass:[NSDictionary class]]) sd = p; }
         }
-
-        if (!statusDict) continue;
-
-        // 检查是否包含车辆相关字段
-        if (!statusDict[@"batterySoc"] && !statusDict[@"mileage"] && !statusDict[@"doorLockStatus"]) continue;
-
-        // 解析状态
-        NSInteger soc = [statusDict[@"batterySoc"] integerValue];
-        double mileage = [statusDict[@"mileage"] doubleValue];
-        double leftMileage = [statusDict[@"leftMileage"] doubleValue];
-        double leftFuel = [statusDict[@"leftFuel"] doubleValue];
-        NSInteger doorLock = [statusDict[@"doorLockStatus"] integerValue];
-        NSInteger acStatus = [statusDict[@"acStatus"] integerValue];
-        double temp = [statusDict[@"interiorTemperature"] doubleValue];
-        double batTemp = [statusDict[@"batAvgTemp"] doubleValue];
-        double voltage = [statusDict[@"voltage"] doubleValue];
-        double current = [statusDict[@"current"] doubleValue];
-        NSInteger soh = [statusDict[@"batSOH"] integerValue];
-        double leftPower = [statusDict[@"leftBatteryPower"] doubleValue];
-        NSString *collectTime = statusDict[@"collectTime"] ?: @"--";
-
-        NSMutableString *hud = [NSMutableString string];
-        [hud appendFormat:@"🚗 宝骏云海\n"];
-        [hud appendFormat:@"🔋 电量: %ld%% (%.1fkWh)\n", (long)soc, leftPower];
-        [hud appendFormat:@"🛣️ 纯电: %ldkm  油: %ldkm\n", (long)leftMileage, (long)leftFuel];
-        [hud appendFormat:@"📊 总里程: %ldkm\n", (long)mileage];
-        [hud appendFormat:@"⚡ %dV / %.1fA  SOH:%ld%%\n", (int)voltage, current, (long)soh];
-        [hud appendFormat:@"%@  %@\n", doorLock ? @"🔒已锁" : @"🔓未锁", acStatus ? @"❄️开" : @"❄️关"];
-        [hud appendFormat:@"🌡️ 内%.0f°C 电%.0f°C\n", temp, batTemp];
-        [hud appendFormat:@"🕐 %@", collectTime];
-        return [hud copy];
+        if (!sd || (!sd[@"batterySoc"] && !sd[@"mileage"])) continue;
+        NSMutableString *h = [NSMutableString string];
+        [h appendFormat:@"Car Status\n"];
+        [h appendFormat:@"SOC: %@%%\n", sd[@"batterySoc"]];
+        [h appendFormat:@"Range: %@km EV / %@km Fuel\n", sd[@"leftMileage"], sd[@"leftFuel"]];
+        [h appendFormat:@"Odometer: %@km\n", sd[@"mileage"]];
+        [h appendFormat:@"Door: %@\n", [sd[@"doorLockStatus"] integerValue] ? @"LOCKED" : @"UNLOCKED"];
+        [h appendFormat:@"AC: %@\n", [sd[@"acStatus"] integerValue] ? @"ON" : @"OFF"];
+        [h appendFormat:@"Temp: %@C\n", sd[@"interiorTemperature"]];
+        [h appendFormat:@"Time: %@", sd[@"collectTime"] ?: @"--"];
+        return [h copy];
     }
     return nil;
 }
 
-// ============================================================
-// MARK: - CoreBluetooth Hooks
-// ============================================================
-
-%hook CBCentralManager
-
-- (void)scanForPeripheralsWithServices:(NSArray *)serviceUUIDs options:(NSDictionary *)options {
-    if (BJIsBaojunProcess()) NSLog(@"[BJBLE] scan services=%@", serviceUUIDs);
-    %orig;
-}
-
-- (void)connectPeripheral:(CBPeripheral *)peripheral options:(NSDictionary *)options {
-    if (BJIsBaojunProcess()) NSLog(@"[BJBLE] connect name=%@ id=%@", peripheral.name, peripheral.identifier.UUIDString);
-    %orig;
-}
-
-- (void)cancelPeripheralConnection:(CBPeripheral *)peripheral {
-    if (BJIsBaojunProcess()) NSLog(@"[BJBLE] disconnect name=%@", peripheral.name);
-    %orig;
-}
-
-%end
-
-%hook CBPeripheral
-
-- (void)writeValue:(NSData *)data forCharacteristic:(CBCharacteristic *)characteristic type:(CBCharacteristicWriteType)type {
-    if (BJIsBaojunProcess()) NSLog(@"[BJBLE][TX] char=%@ len=%lu hex=%@", characteristic.UUID.UUIDString, (unsigned long)data.length, BJHexData(data, 64));
-    %orig;
-}
-
-- (void)setNotifyValue:(BOOL)enabled forCharacteristic:(CBCharacteristic *)characteristic {
-    if (BJIsBaojunProcess()) NSLog(@"[BJBLE][Notify] %@ char=%@", enabled ? @"ON" : @"OFF", characteristic.UUID.UUIDString);
-    %orig;
-}
-
-- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
-    if (BJIsBaojunProcess()) {
-        NSLog(@"[BJBLE][RX] char=%@ len=%lu hex=%@", characteristic.UUID.UUIDString, (unsigned long)characteristic.value.length, BJHexData(characteristic.value, 98));
+@interface BJPanHandler : NSObject
++ (instancetype)shared;
+- (void)handlePan:(UIPanGestureRecognizer *)g;
+@end
+@implementation BJPanHandler
++ (instancetype)shared { static BJPanHandler *h; static dispatch_once_t t; dispatch_once(&t, ^{ h = [BJPanHandler new]; }); return h; }
+- (void)handlePan:(UIPanGestureRecognizer *)g {
+    if (g.state == UIGestureRecognizerStateChanged) {
+        CGPoint loc = [g locationInView:g.view.superview];
+        CGFloat w = g.view.bounds.size.width, h = g.view.bounds.size.height;
+        CGFloat sx = [UIScreen mainScreen].bounds.size.width, sy = [UIScreen mainScreen].bounds.size.height;
+        g.view.center = CGPointMake(MAX(w/2, MIN(loc.x, sx-w/2)), MAX(40+h/2, MIN(loc.y, sy-h-40)));
     }
-    %orig;
 }
-
-%end
-
-// ============================================================
-// MARK: - NSUserDefaults Hook - 捕获状态更新
-// ============================================================
+@end
 
 %hook NSUserDefaults
-
 - (void)setObject:(id)value forKey:(NSString *)defaultName {
     %orig;
-    if (!BJIsBaojunProcess()) return;
-    if ([defaultName containsString:@"car_status"] || [defaultName containsString:@"carStatus"] ||
-        [defaultName containsString:@"vehicle"]) {
-        NSLog(@"[BJBLE] 💾 UserDefaults write: %@", defaultName);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            NSString *status = BJReadCarStatus();
-            if (status) BJUpdateHUD(status);
+    if (!BJIsTarget()) return;
+    if ([defaultName containsString:@"car_status"] || [defaultName containsString:@"vehicle"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            NSString *s = BJReadStatus();
+            if (s && gLabel) gLabel.text = s;
         });
     }
 }
-
 %end
 
-// ============================================================
-// MARK: - 初始化
-// ============================================================
-
 %ctor {
-    @autoreleasepool {
-        if (!BJIsBaojunProcess()) return;
-        NSLog(@"[BJBLE] 🚀🚀🚀 BaojunBLEHUD loaded in %@", [NSBundle mainBundle].bundleIdentifier);
-
-        // 延时显示 HUD
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            BJShowHUD();
-            NSString *status = BJReadCarStatus();
-            if (status) {
-                BJUpdateHUD(status);
-                NSLog(@"[BJBLE] ✅ 初始状态已读取");
-            } else {
-                BJUpdateHUD(@"🚗 宝骏云海\n等待状态数据...\n下拉刷新或重新打开App");
-                NSLog(@"[BJBLE] ⚠️ 初始状态为空，等待 UserDefaults 写入");
-            }
-        });
-    }
+    if (!BJIsTarget()) return;
+    NSLog(@"[BJBLE] Loaded in %@", [NSBundle mainBundle].bundleIdentifier);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        BJShowHUD();
+        NSString *s = BJReadStatus();
+        if (s) gLabel.text = s;
+        else gLabel.text = @"Waiting for data...\nOpen app to load";
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:[BJPanHandler shared] action:@selector(handlePan:)];
+        [gHUD addGestureRecognizer:pan];
+    });
 }
 XEOF
 
