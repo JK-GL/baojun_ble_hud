@@ -1,0 +1,54 @@
+name: Build BaojunBLEHUD From Zip
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'baojun_ble_hud_source.zip'
+      - '.github/workflows/build_from_zip.yml'
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unzip source package
+        run: |
+          test -f baojun_ble_hud_source.zip
+          rm -rf source
+          unzip -o baojun_ble_hud_source.zip -d source
+
+      - name: Install ldid
+        run: |
+          brew update
+          brew install ldid
+
+      - name: Install Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
+
+      - name: Build rootless package
+        working-directory: source/baojun_ble_hud
+        run: |
+          set -o pipefail
+          make clean package THEOS_PACKAGE_SCHEME=rootless messages=yes 2>&1 | tee build.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: source/baojun_ble_hud/build.log
+
+      - name: Upload deb artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baojun-ble-hud-deb
+          path: source/baojun_ble_hud/packages/*.deb
