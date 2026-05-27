@@ -8,7 +8,6 @@ TWEAK_NAME = BaojunBLEHUD
 BaojunBLEHUD_FILES = Tweak.xm HUDViewController.m BLEMonitor.m
 BaojunBLEHUD_CFLAGS = -fobjc-arc -Wno-unused-variable
 BaojunBLEHUD_FRAMEWORKS = UIKit CoreBluetooth QuartzCore Foundation
-BaojunBLEHUD_PRIVATE_FRAMEWORKS = BackBoardServices
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
