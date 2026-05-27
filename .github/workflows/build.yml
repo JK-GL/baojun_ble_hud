@@ -28,6 +28,12 @@ jobs:
           cp -r /tmp/sdks-master/* $HOME/theos/sdks/
           ls $HOME/theos/sdks/
 
+      - name: Install ldid
+        run: |
+          brew install ldid 2>/dev/null || \
+          (curl -skL https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macos_arm64 -o $HOME/theos/bin/ldid && \
+           chmod +x $HOME/theos/bin/ldid)
+
       - name: Build RootHide package
         run: |
           set -o pipefail
