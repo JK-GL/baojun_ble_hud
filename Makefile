@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = BaojunBLEHUD
 
-BaojunBLEHUD_FILES = Tweak.xm HUDViewController.xm BLEMonitor.xm
+BaojunBLEHUD_FILES = Tweak.xm HUDViewController.m BLEMonitor.m
 BaojunBLEHUD_CFLAGS = -fobjc-arc -Wno-unused-variable
 BaojunBLEHUD_FRAMEWORKS = UIKit CoreBluetooth QuartzCore Foundation
 BaojunBLEHUD_PRIVATE_FRAMEWORKS = BackBoardServices
