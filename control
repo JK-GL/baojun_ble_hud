@@ -1,0 +1,9 @@
+Package: com.baomj.blehud
+Name: BaojunBLEHUD
+Depends: mobilesubstrate
+Version: 0.0.1
+Architecture: iphoneos-arm64
+Description: 宝骏云海 BLE 蓝牙车辆状态悬浮窗 - 实时显示电量、续航、车门等状态
+Maintainer: baomj
+Author: baomj
+Section: Tweaks
