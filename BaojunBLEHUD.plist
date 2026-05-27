@@ -7,16 +7,17 @@
 		<key>Bundles</key>
 		<array>
 			<string>com.sgmw.baojunplus</string>
-			<string>com.sgmw.baojun</string>
-			<string>com.baojun.plus</string>
 		</array>
 		<key>Executables</key>
 		<array>
 			<string>Runner</string>
-			<string>baojun</string>
-			<string>baojun-plus</string>
 			<string>baojunplus</string>
 		</array>
+	</dict>
+	<key>Entry</key>
+	<dict>
+		<key>enabled</key>
+		<true/>
 	</dict>
 </dict>
 </plist>
